@@ -124,4 +124,5 @@ client = Client()
 boots_items_extractor = ExtractBootsMaleItems(client=client, host='https://megasport.ua', path='/ua/catalog/krossovki-i-snikersi/male/')
 boots_items_extractor.get_extract_df()
 
+
 print(len(boots_items_extractor.result))
