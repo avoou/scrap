@@ -29,11 +29,13 @@ class ExtractItems(ABC):
         raise NotImplementedError("Not implemented")
     
 
+    @abstractmethod
+    def get_extract_df(self) -> dict:
+        raise NotImplementedError("Not implemented")
+
 class Client:
-    def __init__(self, host: str, path: str) -> None:
-        self.host = host
-        self.path = path
-        self.url = host + path
+    def __init__(self,) -> None:
+        
         self.headers = {
             "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:78.0)   Gecko/20100101 Firefox/78.0", 
             "Referer": "https://www.google.com"
@@ -48,7 +50,10 @@ class Client:
 
 
 class ExtractBootsMaleItems(ExtractItems):
-    def __init__(self, client: Client,) -> None:
+    def __init__(self, client: Client, host: str, path: str) -> None:
+        self.host = host
+        self.path = path
+        self.url = host + path
         self.client = client
         self.result = []
 
@@ -94,11 +99,11 @@ class ExtractBootsMaleItems(ExtractItems):
 
 
     def get_extract_df(self):
-        pages = self.get_pages_count(self.client.url)
+        pages = self.get_pages_count(self.url)
         pages = 2
 
         for i in range(1, pages):
-            url = self.client.url + f"page-{i}/"
+            url = self.url + f"page-{i}/"
             sp = self.client.get_bs_by_url(url)
             items = self.get_items(sp)
             
@@ -110,13 +115,13 @@ class ExtractBootsMaleItems(ExtractItems):
                     "name": name,
                     "price": price,
                     "current": current,
-                    "link": self.client.host + str(link),
+                    "link": self.host + str(link),
                 }
                 self.result.append(res)
     
 
-client = Client(host='https://megasport.ua', path='/ua/catalog/krossovki-i-snikersi/male/')
-boots_items_extractor = ExtractBootsMaleItems(client=client)
+client = Client()
+boots_items_extractor = ExtractBootsMaleItems(client=client, host='https://megasport.ua', path='/ua/catalog/krossovki-i-snikersi/male/')
 boots_items_extractor.get_extract_df()
 
 print(len(boots_items_extractor.result))
