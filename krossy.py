@@ -1,6 +1,7 @@
 import requests
 from pprint import pprint
 from bs4 import BeautifulSoup, Tag
+from typing import TypedDict, Optional, Tuple
 
 
 def get_bs_by_url(url: str) -> BeautifulSoup:
@@ -19,7 +20,7 @@ def get_name(item: Tag) -> str:
         return None
 
 
-def get_price_current(item: Tag) -> tuple[int, str]:
+def get_price_current(item: Tag) -> Tuple[int, str]:
     try:
         price = item.find('span', class_='MeSmTt').text
         price, current = price.split("\u2009")
@@ -30,7 +31,7 @@ def get_price_current(item: Tag) -> tuple[int, str]:
         return None, None
 
 
-def get_items_link(item: Tag):
+def get_items_link(item: Tag) -> Tag:
     try:
         tag = item.find('a', class_='it25hX')
         return tag.get('href')
@@ -39,7 +40,11 @@ def get_items_link(item: Tag):
 
 
 def get_pages_count(sp: Tag) -> int:
-    return len(sp.find(id='select-page'))
+    try:
+        return len(sp.find(id='select-page'))
+    except Exception:
+        return 1
+    
 
 host = 'https://megasport.ua'
 boots_url = '/ua/catalog/krossovki-i-snikersi/male/'
@@ -48,6 +53,7 @@ sp = get_bs_by_url(host + boots_url)
 
 pages = len(sp.find(id='select-page'))
 
+# TODO: add DataFrame
 collect = []
 
 for i in range(1, 2):
@@ -68,5 +74,5 @@ for i in range(1, 2):
         collect.append(res)
 
 
-pprint(collect)
+#pprint(collect)
 print(len(collect))
