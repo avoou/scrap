@@ -27,7 +27,6 @@ class ExtractItems(ABC):
         self.path = path
         self.url = host + path
         self.client = client
-        self.result = []
         self.df = pd.DataFrame(columns=["name", "price", "current", "link"])
     
 
@@ -61,28 +60,37 @@ class ExtractItems(ABC):
         raise NotImplementedError("Not implemented")
     
 
-    def get_extract_df(self):
+    def _get_items_by_all_pages(self):
         pages = self._get_pages_count(self.url)
         pages = 2
-
+        items = []
         for i in range(1, pages):
             url = self.url + f"page-{i}/"
             sp = self.client.get_bs_by_url(url)
-            items = self._get_items(sp)
-            
-            for item in items:
-                name = self._get_name(item=item)
-                price, current = self._get_price_current(item=item)
-                link = self._get_items_link(item)
-                res = {
-                    "name": name,
-                    "price": price,
-                    "current": current,
-                    "link": self.host + str(link),
-                }
+            for item in self._get_items(sp):
+                items.append(item)
+        return items
 
-                self.df = pd.concat([self.df, pd.DataFrame([res])])
 
+    def get_extract_df(self):
+        items = self._get_items_by_all_pages()
+        for item in items:
+            name = self._get_name(item=item)
+            price, current = self._get_price_current(item=item)
+            link = self._get_items_link(item)
+            res = {
+                "name": name,
+                "price": price,
+                "current": current,
+                "link": self.host + str(link),
+            }
+
+            self.df = pd.concat([self.df, pd.DataFrame([res])])
+
+
+    @property
+    def dataframe(self):
+        return self.df
 
 
 class ExtractBootsMaleItems(ExtractItems):
@@ -131,6 +139,7 @@ client = Client()
 boots_items_extractor = ExtractBootsMaleItems(client=client, host='https://megasport.ua', path='/ua/catalog/krossovki-i-snikersi/male/')
 boots_items_extractor.get_extract_df()
 
-
-print(len(boots_items_extractor.df))
-print(boots_items_extractor.df.head())
+print(len(boots_items_extractor.dataframe))
+print(boots_items_extractor.dataframe.info())
+print('max boots price', boots_items_extractor.dataframe['price'].max())
+print('min boots price', boots_items_extractor.dataframe['price'].min())
