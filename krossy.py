@@ -57,11 +57,6 @@ class ExtractItems(ABC):
         raise NotImplementedError("Not implemented")
     
 
-    @abstractmethod
-    def get_extract_df(self) -> dict:
-        raise NotImplementedError("Not implemented")
-    
-
     def _get_items_by_all_pages(self):
         pages = self._get_pages_count(self.url)
         if not pages:
