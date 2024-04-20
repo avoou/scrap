@@ -86,7 +86,7 @@ class ExtractItems(ABC):
         return items
 
 
-    def get_extract_df(self):
+    def extract(self):
         items = self._get_items_by_all_pages()
         for item in items:
             name = self._get_name(item=item)
@@ -100,7 +100,7 @@ class ExtractItems(ABC):
             }
 
             self.df = pd.concat([self.df, pd.DataFrame([res])])
-
+        #return self.df
 
     @property
     def dataframe(self):
@@ -154,7 +154,7 @@ start = time.time()
 
 client = Client()
 boots_items_extractor = ExtractBootsMaleItems(client=client, host='https://megasport.ua', path='/ua/catalog/krossovki-i-snikersi/male/')
-boots_items_extractor.get_extract_df()
+boots_items_extractor.extract()
 
 
 print(len(boots_items_extractor.dataframe))
