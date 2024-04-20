@@ -6,6 +6,7 @@ from typing import Tuple
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 
+MAX_THREADS = 100
 
 class Client:
     def __init__(self,) -> None:
@@ -60,20 +61,23 @@ class ExtractItems(ABC):
     def get_extract_df(self) -> dict:
         raise NotImplementedError("Not implemented")
     
-    def _get_items_by_all_pages2(self):
+
+    def _get_items_by_all_pages(self):
         pages = self._get_pages_count(self.url)
         if not pages:
             pages = 1
+            #TODO add logging that count of pages not found
         urls = [self.url + f"page-{i}/" for i in range(1, pages)]
         items = []
-        with ThreadPoolExecutor(max_workers=int(pages)) as executor:
+        with ThreadPoolExecutor(max_workers=int(MAX_THREADS)) as executor:
             bs_pages = list(executor.map(self.client.get_bs_by_url, urls))
         for page in bs_pages:
             for item in self._get_items(page):
                 items.append(item)
         return items
 
-    def _get_items_by_all_pages(self):
+
+    def _get_items_by_all_pages_consistently(self):
         pages = self._get_pages_count(self.url)
         if not pages:
             pages = 1
@@ -88,7 +92,7 @@ class ExtractItems(ABC):
 
 
     def get_extract_df(self):
-        items = self._get_items_by_all_pages2()
+        items = self._get_items_by_all_pages()
         for item in items:
             name = self._get_name(item=item)
             price, current = self._get_price_current(item=item)
@@ -163,4 +167,4 @@ print(len(boots_items_extractor.dataframe))
 print('max boots price', boots_items_extractor.dataframe['price'].max())
 print('min boots price', boots_items_extractor.dataframe['price'].min())
 end = time.time()
-print('time: ', end - start) #for 7 pages it takes 4-5 sec with threads
+print('time: ', end - start) #for 7 pages and 450 items it takes about 3 sec with threads
