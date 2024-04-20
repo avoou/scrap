@@ -4,6 +4,7 @@ from pprint import pprint
 from bs4 import BeautifulSoup, Tag
 from typing import Tuple
 from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor
 
 
 class Client:
@@ -59,9 +60,23 @@ class ExtractItems(ABC):
     def get_extract_df(self) -> dict:
         raise NotImplementedError("Not implemented")
     
+    def _get_items_by_all_pages2(self):
+        pages = self._get_pages_count(self.url)
+        if not pages:
+            pages = 1
+        urls = [self.url + f"page-{i}/" for i in range(1, pages)]
+        items = []
+        with ThreadPoolExecutor(max_workers=int(pages)) as executor:
+            bs_pages = list(executor.map(self.client.get_bs_by_url, urls))
+        for page in bs_pages:
+            for item in self._get_items(page):
+                items.append(item)
+        return items
 
     def _get_items_by_all_pages(self):
         pages = self._get_pages_count(self.url)
+        if not pages:
+            pages = 1
         pages = 2
         items = []
         for i in range(1, pages):
@@ -73,7 +88,7 @@ class ExtractItems(ABC):
 
 
     def get_extract_df(self):
-        items = self._get_items_by_all_pages()
+        items = self._get_items_by_all_pages2()
         for item in items:
             name = self._get_name(item=item)
             price, current = self._get_price_current(item=item)
@@ -134,12 +149,18 @@ class ExtractBootsMaleItems(ExtractItems):
             return 1
 
     
+import time
+start = time.time()
+
 
 client = Client()
 boots_items_extractor = ExtractBootsMaleItems(client=client, host='https://megasport.ua', path='/ua/catalog/krossovki-i-snikersi/male/')
 boots_items_extractor.get_extract_df()
 
+
 print(len(boots_items_extractor.dataframe))
-print(boots_items_extractor.dataframe.info())
+#print(boots_items_extractor.dataframe.info())
 print('max boots price', boots_items_extractor.dataframe['price'].max())
 print('min boots price', boots_items_extractor.dataframe['price'].min())
+end = time.time()
+print('time: ', end - start) #for 7 pages it takes 4-5 sec with threads
