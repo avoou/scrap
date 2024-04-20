@@ -1,4 +1,5 @@
 import requests
+import pandas as pd
 from pprint import pprint
 from bs4 import BeautifulSoup, Tag
 from typing import Tuple
@@ -10,7 +11,6 @@ class Client:
         
         self.headers = {
             "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:78.0)   Gecko/20100101 Firefox/78.0", 
-            "Referer": "https://www.google.com"
         }
 
 
@@ -28,7 +28,9 @@ class ExtractItems(ABC):
         self.url = host + path
         self.client = client
         self.result = []
+        self.df = pd.DataFrame(columns=["name", "price", "current", "link"])
     
+
     @abstractmethod
     def _get_pages_count(self) -> int:
         raise NotImplementedError("Not implemented")
@@ -78,7 +80,8 @@ class ExtractItems(ABC):
                     "current": current,
                     "link": self.host + str(link),
                 }
-                self.result.append(res)
+
+                self.df = pd.concat([self.df, pd.DataFrame([res])])
 
 
 
@@ -112,7 +115,7 @@ class ExtractBootsMaleItems(ExtractItems):
             tag = item.find('a', class_='it25hX')
             return tag.get('href')
         except Exception:
-            return None
+            return ''
 
 
     def _get_pages_count(self, url: str) -> int:
@@ -129,4 +132,5 @@ boots_items_extractor = ExtractBootsMaleItems(client=client, host='https://megas
 boots_items_extractor.get_extract_df()
 
 
-print(len(boots_items_extractor.result))
+print(len(boots_items_extractor.df))
+print(boots_items_extractor.df.head())
