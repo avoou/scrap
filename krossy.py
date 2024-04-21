@@ -1,4 +1,5 @@
 import requests
+import sqlite3
 import pandas as pd
 from pprint import pprint
 from bs4 import BeautifulSoup, Tag
@@ -29,8 +30,13 @@ class ClientWeb:
 
 
 class ClientDB:
-    def __init__(self) -> None:
-        pass
+    def __init__(self, db: str) -> None:
+        self.db = db
+        self.con = sqlite3.connect(self.db)
+
+    
+    def write_df_to_db(self, df: pd.DataFrame):
+        df.to_sql(name='krossy_table', con=self.con, if_exists = 'append', chunksize = 1000)
 
 
 class ExtractItems(ABC):
@@ -194,20 +200,28 @@ start = time.time()
 
 
 client = ClientWeb()
+transform = Transform()
+db = ClientDB(db='krossy.db')
+
 boots_items_extractor = ExtractBootsMaleItems(client=client, host='https://megasport.ua', path='/ua/catalog/krossovki-i-snikersi/male/')
 boots_items_extractor.extract()
-
 
 #print(len(boots_items_extractor.dataframe))
 #print(boots_items_extractor.dataframe.info())
 #print('max boots price', boots_items_extractor.dataframe['price_ua'].max())
 #print('min boots price', boots_items_extractor.dataframe['price_ua'].min())
-transform = Transform()
-transform.transform(boots_items_extractor.dataframe)
-print(transform.dataframe.head())
-print('min boots price', transform.dataframe['price_ua'].min())
-print(len(transform.dataframe))
 
+transform.transform(boots_items_extractor.dataframe)
+# print(transform.dataframe.head())
+# print('min boots price', transform.dataframe['price_ua'].min())
+# print(len(transform.dataframe))
+
+db.write_df_to_db(transform.dataframe)
+
+con = sqlite3.connect("krossy.db")
+cur = con.cursor()
+res = cur.execute("SELECT * FROM krossy_table WHERE price_ua > 8000")
+print(res.fetchall())
 
 end = time.time()
-print('time: ', end - start) #for 7 pages and 450 items it takes about 3 sec with threads
+print('time: ', end - start)
