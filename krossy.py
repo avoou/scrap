@@ -7,7 +7,11 @@ from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
+
 MAX_THREADS = 100
+RAW_DF_COLUMNS = ["name", "price_ua", "link"]
+OUT_DF_COLUMNS = RAW_DF_COLUMNS + ["date", "price_us"]
+
 
 class ClientWeb:
     def __init__(self,) -> None:
@@ -35,7 +39,7 @@ class ExtractItems(ABC):
         self.path = path
         self.url = host + path
         self.client = client
-        self.df = pd.DataFrame(columns=["name", "price_ua", "link"])
+        self.df = pd.DataFrame(columns=RAW_DF_COLUMNS)
     
 
     @abstractmethod
@@ -101,12 +105,11 @@ class ExtractItems(ABC):
             res = {
                 "name": name,
                 "price_ua": price,
-
                 "link": self.host + str(link),
             }
 
             self.df = pd.concat([self.df, pd.DataFrame([res])])
-        #return self.df
+
 
     @property
     def dataframe(self):
@@ -155,26 +158,30 @@ class ExtractBootsMaleItems(ExtractItems):
 
 
 class Transform:
-    def __init__(self, extract_df: pd.DataFrame) -> None:
-        self.df = extract_df.copy()
+    def __init__(self, ) -> None:
+        #self.df = extract_df.copy()
+        self.df = pd.DataFrame(columns=OUT_DF_COLUMNS)
 
 
-    def drop_none(self):
-        self.df = self.df.dropna() 
+    def drop_none(self, df: pd.DataFrame):
+        return df.dropna() 
 
 
-    def add_another_current(self):
+    def add_another_current(self, df: pd.DataFrame):
         course = 35
-        self.df.loc[:, 'price_us'] = self.df.loc[:, 'price_ua'].apply(lambda x: round(x / course, 2))
-
-    def add_data_time(self):
-        self.df.loc[:, 'date'] = datetime.now()
+        df.loc[:, 'price_us'] = df.loc[:, 'price_ua'].apply(lambda x: round(x / course, 2))
 
 
-    def transform(self):
-        self.drop_none()  
-        self.add_another_current()
-        self.add_data_time()
+    def add_data_time(self, df: pd.DataFrame):
+        df.loc[:, 'date'] = datetime.now()
+
+
+    def transform(self, extract_df: pd.DataFrame):
+        extract_df = extract_df.copy()
+        extract_df = self.drop_none(extract_df)
+        self.add_another_current(extract_df)
+        self.add_data_time(extract_df)
+        self.df = pd.concat([self.df, extract_df])
         
 
     @property
@@ -191,13 +198,15 @@ boots_items_extractor = ExtractBootsMaleItems(client=client, host='https://megas
 boots_items_extractor.extract()
 
 
-print(len(boots_items_extractor.dataframe))
+#print(len(boots_items_extractor.dataframe))
 #print(boots_items_extractor.dataframe.info())
-print('max boots price', boots_items_extractor.dataframe['price_ua'].max())
-print('min boots price', boots_items_extractor.dataframe['price_ua'].min())
-transform = Transform(extract_df=boots_items_extractor.dataframe)
-transform.transform()
+#print('max boots price', boots_items_extractor.dataframe['price_ua'].max())
+#print('min boots price', boots_items_extractor.dataframe['price_ua'].min())
+transform = Transform()
+transform.transform(boots_items_extractor.dataframe)
 print(transform.dataframe.head())
+print('min boots price', transform.dataframe['price_ua'].min())
+print(len(transform.dataframe))
 
 
 end = time.time()
