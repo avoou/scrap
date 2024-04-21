@@ -5,10 +5,11 @@ from bs4 import BeautifulSoup, Tag
 from typing import Tuple
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 
 MAX_THREADS = 100
 
-class Client:
+class ClientWeb:
     def __init__(self,) -> None:
         
         self.headers = {
@@ -23,13 +24,18 @@ class Client:
         return BeautifulSoup(txt, 'html.parser')
 
 
+class ClientDB:
+    def __init__(self) -> None:
+        pass
+
+
 class ExtractItems(ABC):
-    def __init__(self, client: Client, host: str, path: str):
+    def __init__(self, client: ClientWeb, host: str, path: str):
         self.host = host
         self.path = path
         self.url = host + path
         self.client = client
-        self.df = pd.DataFrame(columns=["name", "price", "current", "link"])
+        self.df = pd.DataFrame(columns=["name", "price_ua", "link"])
     
 
     @abstractmethod
@@ -94,8 +100,8 @@ class ExtractItems(ABC):
             link = self._get_items_link(item)
             res = {
                 "name": name,
-                "price": price,
-                "current": current,
+                "price_ua": price,
+
                 "link": self.host + str(link),
             }
 
@@ -147,19 +153,52 @@ class ExtractBootsMaleItems(ExtractItems):
         except Exception:
             return 1
 
+
+class Transform:
+    def __init__(self, extract_df: pd.DataFrame) -> None:
+        self.df = extract_df.copy()
+
+
+    def drop_none(self):
+        self.df = self.df.dropna() 
+
+
+    def add_another_current(self):
+        course = 35
+        self.df.loc[:, 'price_us'] = self.df.loc[:, 'price_ua'].apply(lambda x: round(x / course, 2))
+
+    def add_data_time(self):
+        self.df.loc[:, 'date'] = datetime.now()
+
+
+    def transform(self):
+        self.drop_none()  
+        self.add_another_current()
+        self.add_data_time()
+        
+
+    @property
+    def dataframe(self):
+        return self.df
+
     
 import time
 start = time.time()
 
 
-client = Client()
+client = ClientWeb()
 boots_items_extractor = ExtractBootsMaleItems(client=client, host='https://megasport.ua', path='/ua/catalog/krossovki-i-snikersi/male/')
 boots_items_extractor.extract()
 
 
 print(len(boots_items_extractor.dataframe))
 #print(boots_items_extractor.dataframe.info())
-print('max boots price', boots_items_extractor.dataframe['price'].max())
-print('min boots price', boots_items_extractor.dataframe['price'].min())
+print('max boots price', boots_items_extractor.dataframe['price_ua'].max())
+print('min boots price', boots_items_extractor.dataframe['price_ua'].min())
+transform = Transform(extract_df=boots_items_extractor.dataframe)
+transform.transform()
+print(transform.dataframe.head())
+
+
 end = time.time()
 print('time: ', end - start) #for 7 pages and 450 items it takes about 3 sec with threads
