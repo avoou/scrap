@@ -33,10 +33,15 @@ class ClientDB:
     def __init__(self, db: str) -> None:
         self.db = db
         self.con = sqlite3.connect(self.db)
-
+        self.cursor = self.con.cursor()
     
     def write_df_to_db(self, df: pd.DataFrame):
         df.to_sql(name='krossy_table', con=self.con, if_exists = 'append', chunksize = 1000)
+
+
+    def request(self, req: str):
+        response = self.cursor.execute(req)
+        return response.fetchall()
 
 
 class ExtractItems(ABC):
