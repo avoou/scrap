@@ -1,5 +1,6 @@
 import requests
 import sqlite3
+import logging
 import pandas as pd
 from pprint import pprint
 from bs4 import BeautifulSoup, Tag
@@ -12,6 +13,14 @@ from datetime import datetime
 MAX_THREADS = 100
 RAW_DF_COLUMNS = ["name", "price_ua", "link"]
 OUT_DF_COLUMNS = RAW_DF_COLUMNS + ["date", "price_us"]
+
+
+logger = logging.getLogger()
+logging.basicConfig(level=logging.INFO)
+
+
+class NoItemsError(Exception):
+    pass
 
 
 class ClientWeb:
@@ -82,7 +91,8 @@ class ExtractItems(ABC):
         pages = self._get_pages_count(self.url)
         if not pages:
             pages = 1
-            #TODO add logging that count of pages not found
+            logger.warning('Only one page is used for extracting')
+
         urls = [self.url + f"page-{i}/" for i in range(1, pages)]
         items = []
         with ThreadPoolExecutor(max_workers=int(MAX_THREADS)) as executor:
@@ -90,6 +100,11 @@ class ExtractItems(ABC):
         for page in bs_pages:
             for item in self._get_items(page):
                 items.append(item)
+
+        if not len(items):
+            logger.error('No any items. Check internet connection or urls')
+            raise NoItemsError
+        
         return items
 
 
@@ -110,21 +125,34 @@ class ExtractItems(ABC):
     def extract(self):
         items = self._get_items_by_all_pages()
         for item in items:
-            name = self._get_name(item=item)
-            price, current = self._get_price_current(item=item)
-            link = self._get_items_link(item)
-            res = {
-                "name": name,
-                "price_ua": price,
-                "link": self.host + str(link),
-            }
+            try:
+                name = self._get_name(item=item)
+                price, current = self._get_price_current(item=item)
+                link = self._get_items_link(item)
+                res = {
+                    "name": name,
+                    "price_ua": price,
+                    "link": self.host + str(link),
+                }
+                self.df = pd.concat([self.df, pd.DataFrame([res])])
+            except Exception:
+                pass
 
-            self.df = pd.concat([self.df, pd.DataFrame([res])])
+        if not len(self.df):
+            logger.error('Empty extract df. Check internet connection or urls')
+            raise NoItemsError
+
+            
 
 
     @property
     def dataframe(self):
         return self.df
+    
+
+    @property
+    def lasts_items(self):
+        return self.last_items_count
 
 
 class ExtractBootsMaleItems(ExtractItems):
@@ -157,7 +185,7 @@ class ExtractBootsMaleItems(ExtractItems):
             tag = item.find('a', class_='it25hX')
             return tag.get('href')
         except Exception:
-            return ''
+            return None
 
 
     def _get_pages_count(self, url: str) -> int:
@@ -165,7 +193,7 @@ class ExtractBootsMaleItems(ExtractItems):
             sp = self.client.get_bs_by_url(url)
             return len(sp.find(id='select-page'))
         except Exception:
-            return 1
+            return None
 
 
 class Transform:
@@ -175,6 +203,8 @@ class Transform:
 
 
     def drop_none(self, df: pd.DataFrame):
+        #count nones
+        logger.info(f'Number of missing items: {df.isnull().any(axis=1).sum()}')
         return df.dropna() 
 
 
@@ -199,34 +229,45 @@ class Transform:
     def dataframe(self):
         return self.df
 
+
+def main():
+    import time
+    start = time.time()
+
+
+    client = ClientWeb()
+    transform = Transform()
+    db = ClientDB(db='krossy.db')
+
+    boots_items_extractor = ExtractBootsMaleItems(client=client, host='https://megasport.ua', path='/ua/catalog/krossovki-i-snikersi/male/')
+    boots_items_extractor.extract()
+
+    #print(len(boots_items_extractor.dataframe))
+    #print(boots_items_extractor.dataframe.info())
+    #print('max boots price', boots_items_extractor.dataframe['price_ua'].max())
+    #print('min boots price', boots_items_extractor.dataframe['price_ua'].min())
+
+    transform.transform(boots_items_extractor.dataframe)
+    print(transform.dataframe.head())
+    # print('min boots price', transform.dataframe['price_ua'].min())
     
-import time
-start = time.time()
+
+    db.write_df_to_db(transform.dataframe)
+    logger.info(f'It has written to db {len(transform.dataframe)} of items')
+    # logger.info(f'Lasts items: {boots_items_extractor.}')
+
+    # con = sqlite3.connect("krossy.db")
+    # cur = con.cursor()
+    # res = cur.execute("SELECT * FROM krossy_table WHERE price_ua > 8000")
+    # print(res.fetchall())
+
+    end = time.time()
+    print('time: ', end - start)
 
 
-client = ClientWeb()
-transform = Transform()
-db = ClientDB(db='krossy.db')
-
-boots_items_extractor = ExtractBootsMaleItems(client=client, host='https://megasport.ua', path='/ua/catalog/krossovki-i-snikersi/male/')
-boots_items_extractor.extract()
-
-#print(len(boots_items_extractor.dataframe))
-#print(boots_items_extractor.dataframe.info())
-#print('max boots price', boots_items_extractor.dataframe['price_ua'].max())
-#print('min boots price', boots_items_extractor.dataframe['price_ua'].min())
-
-transform.transform(boots_items_extractor.dataframe)
-# print(transform.dataframe.head())
-# print('min boots price', transform.dataframe['price_ua'].min())
-# print(len(transform.dataframe))
-
-db.write_df_to_db(transform.dataframe)
-
-con = sqlite3.connect("krossy.db")
-cur = con.cursor()
-res = cur.execute("SELECT * FROM krossy_table WHERE price_ua > 8000")
-print(res.fetchall())
-
-end = time.time()
-print('time: ', end - start)
+if __name__ == '__main__':
+    try:
+        main()
+    except Exception as e:
+        print(e)
+        logger.error(e, f'error: {str(e)}')
