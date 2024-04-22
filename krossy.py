@@ -35,7 +35,9 @@ class ClientWeb:
     def __init__(self,) -> None:
         
         self.headers = {
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:78.0)   Gecko/20100101 Firefox/78.0", 
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:78.0)   Gecko/20100101 Firefox/78.0",
+            "Accept": "*/*",
+            "Referer": "https://megasport.ua",
         }
 
 
