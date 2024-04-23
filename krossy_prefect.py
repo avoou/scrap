@@ -70,8 +70,55 @@ def get_items_by_page(url: str):
     items = get_items(sp)
     return items
 
+
+def get_name(item: Tag) -> str:
+    try:
+        name = item.find('div', class_='ihuxuw').text
+        name = name.replace("\u2009", " ").replace("\xa0", " ")
+        return str(name)
+    except Exception:
+        return None
+
+
+def get_price_current(item: Tag) -> Tuple[int, str]:
+    try:
+        price = item.find('span', class_='MeSmTt').text
+        price, current = price.split("\u2009")
+        price = int(price.replace("\xa0", ""))
+
+        return price, current
+    except Exception:
+        return None, None
+
+
+def get_items_link(item: Tag) -> str:
+    try:
+        tag = item.find('a', class_='it25hX')
+        return tag.get('href')
+    except Exception:
+        return None
+
+@task
+def to_df(items: list, host: str) -> pd.DataFrame:
+    df = pd.DataFrame(columns=Schemes.RAW)
+
+    for item in items:
+        name = get_name(item=item)
+        price, current = get_price_current(item=item)
+        link = get_items_link(item)
+        res = {
+            "name": name,
+            "price_ua": price,
+            "link": host + link if link else None,
+        }
+
+        df = pd.concat([df, pd.DataFrame([res])])
+
+    return df
+
+
 @flow
-def extract(host: str, path: str):
+def extract(host: str, path: str) -> list:
     logger = get_run_logger()
     logger.info('Start extracting ...')
     url = host + path
@@ -85,8 +132,24 @@ def extract(host: str, path: str):
         path = path + f"page-{i}/"
         url = host + path
         futures.append(get_items_by_page.submit(url))
-    res = [item for future in futures for item in future.result()]
-    return res
+    
+    items = []
+    for future in futures:
+        for item in future.result():
+            if item:
+                items.append(item) 
+
+    #res = [item for future in futures for item in future.result()]
+    if not len(items):
+        logger.error("Cant get items. Check the implementation of get_items method")
+        raise NoItemsError
+    #return res
+
+    df = to_df(items=items, host=host)
+    #print(df.info())
+    return df
+
+
 
 
 # class ClientDB:
