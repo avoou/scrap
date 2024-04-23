@@ -33,6 +33,78 @@ class EmptyDfError(Exception):
     pass
 
 
+class ExtractItems(ABC):
+    @abstractmethod
+    def _get_pages_count(self) -> int:
+        raise NotImplementedError("Not implemented")
+    
+
+    @abstractmethod
+    def _get_items(self) -> str:
+        raise NotImplementedError("Not implemented")
+
+
+    @abstractmethod
+    def _get_name(self) -> str:
+        raise NotImplementedError("Not implemented")
+    
+
+    @abstractmethod
+    def _get_price_current(self) -> str:
+        raise NotImplementedError("Not implemented")
+
+
+    @abstractmethod
+    def _get_items_link(self) -> str:
+        raise NotImplementedError("Not implemented")
+    
+
+class ExtractBootsMaleItems(ExtractItems):
+    @staticmethod
+    def get_items(sp: BeautifulSoup) -> Tag:
+        items = sp.find('div', class_='Fkfp3V')
+        return items if items else [None]
+    
+
+    @staticmethod
+    def get_pages_count(sp: BeautifulSoup) -> int:
+        try:
+            return len(sp.find(id='select-page'))
+        except Exception:
+            return None
+        
+
+    @staticmethod
+    def get_name(item: Tag) -> str:
+        try:
+            name = item.find('div', class_='ihuxuw').text
+            name = name.replace("\u2009", " ").replace("\xa0", " ")
+            return str(name)
+        except Exception:
+            return None
+
+
+    @staticmethod
+    def get_price_current(item: Tag) -> Tuple[int, str]:
+        try:
+            price = item.find('span', class_='MeSmTt').text
+            price, current = price.split("\u2009")
+            price = int(price.replace("\xa0", ""))
+
+            return price, current
+        except Exception:
+            return None, None
+
+
+    @staticmethod
+    def get_items_link(item: Tag) -> str:
+        try:
+            tag = item.find('a', class_='it25hX')
+            return tag.get('href')
+        except Exception:
+            return None
+
+
 @task
 def get_bs_by_url(url: str) -> BeautifulSoup:
     logger = get_run_logger()
@@ -52,60 +124,20 @@ def get_bs_by_url(url: str) -> BeautifulSoup:
 
 
 @task
-def get_pages_count(sp: BeautifulSoup) -> int:
-    try:
-        return len(sp.find(id='select-page'))
-    except Exception:
-        return None
-
-@task
-def get_items(sp: BeautifulSoup) -> Tag:
-    items = sp.find('div', class_='Fkfp3V')
-    return items if items else [None]
-
-
-@task
-def get_items_by_page(url: str):
+def get_items_by_page(url: str, ServeCls):
     sp = get_bs_by_url(url)
-    items = get_items(sp)
+    items = ServeCls.get_items(sp)
     return items
 
 
-def get_name(item: Tag) -> str:
-    try:
-        name = item.find('div', class_='ihuxuw').text
-        name = name.replace("\u2009", " ").replace("\xa0", " ")
-        return str(name)
-    except Exception:
-        return None
-
-
-def get_price_current(item: Tag) -> Tuple[int, str]:
-    try:
-        price = item.find('span', class_='MeSmTt').text
-        price, current = price.split("\u2009")
-        price = int(price.replace("\xa0", ""))
-
-        return price, current
-    except Exception:
-        return None, None
-
-
-def get_items_link(item: Tag) -> str:
-    try:
-        tag = item.find('a', class_='it25hX')
-        return tag.get('href')
-    except Exception:
-        return None
-
 @task
-def to_df(items: list, host: str) -> pd.DataFrame:
+def to_df(items: list, host: str, ServeCls) -> pd.DataFrame:
     df = pd.DataFrame(columns=Schemes.RAW)
 
     for item in items:
-        name = get_name(item=item)
-        price, current = get_price_current(item=item)
-        link = get_items_link(item)
+        name = ServeCls.get_name(item=item)
+        price, current = ServeCls.get_price_current(item=item)
+        link = ServeCls.get_items_link(item)
         res = {
             "name": name,
             "price_ua": price,
@@ -118,12 +150,12 @@ def to_df(items: list, host: str) -> pd.DataFrame:
 
 
 @flow
-def extract(host: str, path: str) -> list:
+def extract_boots(host: str, path: str, ServeCls) -> list:
     logger = get_run_logger()
     logger.info('Start extracting ...')
     url = host + path
     sp = get_bs_by_url(url)
-    count = get_pages_count(sp)
+    count = ServeCls.get_pages_count(sp)
     if not count:
         count = 1
     count = 2
@@ -131,7 +163,7 @@ def extract(host: str, path: str) -> list:
     for i in range(1, count):
         path = path + f"page-{i}/"
         url = host + path
-        futures.append(get_items_by_page.submit(url))
+        futures.append(get_items_by_page.submit(url, ServeCls))
     
     items = []
     for future in futures:
@@ -139,13 +171,11 @@ def extract(host: str, path: str) -> list:
             if item:
                 items.append(item) 
 
-    #res = [item for future in futures for item in future.result()]
     if not len(items):
         logger.error("Cant get items. Check the implementation of get_items method")
         raise NoItemsError
-    #return res
 
-    df = to_df(items=items, host=host)
+    df = to_df(items=items, host=host, ServeCls=ServeCls)
     #print(df.info())
     return df
 
@@ -367,4 +397,4 @@ def extract(host: str, path: str) -> list:
 
 
 if __name__ == '__main__':
-        extract(host='https://megasport.ua', path='/ua/catalog/krossovki-i-snikersi/male/')
+        extract_boots(host='https://megasport.ua', path='/ua/catalog/krossovki-i-snikersi/male/', ServeCls=ExtractBootsMaleItems)
