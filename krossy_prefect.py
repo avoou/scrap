@@ -9,7 +9,7 @@ from typing import Tuple
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from prefect import task, flow, get_run_logger
+from prefect import task, Task, flow, get_run_logger
 
 
 # logger = logging.getLogger()
@@ -57,7 +57,25 @@ class ExtractItems(ABC):
     @abstractmethod
     def _get_items_link(self) -> str:
         raise NotImplementedError("Not implemented")
-    
+
+
+@task
+def get_bs_by_url(url: str) -> BeautifulSoup:
+    logger = get_run_logger()
+    headers = {
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:78.0)   Gecko/20100101 Firefox/78.0",
+        "Accept": "*/*",
+        "Referer": "https://megasport.ua",
+    }
+    try:
+        response = requests.get(url, headers=headers)
+        response.encoding = 'utf-8'
+        txt = response.text
+    except:
+        logger.error("Error with response. Check internet connection or url")
+        raise NoItemsError
+    return BeautifulSoup(txt, 'html.parser')
+
 
 class ExtractBootsMaleItems(ExtractItems):
     @staticmethod
@@ -103,30 +121,18 @@ class ExtractBootsMaleItems(ExtractItems):
             return tag.get('href')
         except Exception:
             return None
+        
+
+    @staticmethod
+    def get_items_by_page(page_url: str):
+        sp = get_bs_by_url(page_url)
+        items = __class__.get_items(sp)
+        return items
 
 
 @task
-def get_bs_by_url(url: str) -> BeautifulSoup:
-    logger = get_run_logger()
-    headers = {
-        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:78.0)   Gecko/20100101 Firefox/78.0",
-        "Accept": "*/*",
-        "Referer": "https://megasport.ua",
-    }
-    try:
-        response = requests.get(url, headers=headers)
-        response.encoding = 'utf-8'
-        txt = response.text
-    except:
-        logger.error("Error with response. Check internet connection or url")
-        raise NoItemsError
-    return BeautifulSoup(txt, 'html.parser')
-
-
-@task
-def get_items_by_page(url: str, ServeCls):
-    sp = get_bs_by_url(url)
-    items = ServeCls.get_items(sp)
+def get_boots_items_by_page(url: str, ServeCls):
+    items = ServeCls.get_items_by_page(url)
     return items
 
 
@@ -150,7 +156,7 @@ def to_df(items: list, host: str, ServeCls) -> pd.DataFrame:
 
 
 @flow
-def extract_boots(host: str, path: str, ServeCls) -> list:
+def extract(host: str, path: str, ServeCls) -> list:
     logger = get_run_logger()
     logger.info('Start extracting ...')
     url = host + path
@@ -163,7 +169,7 @@ def extract_boots(host: str, path: str, ServeCls) -> list:
     for i in range(1, count):
         path = path + f"page-{i}/"
         url = host + path
-        futures.append(get_items_by_page.submit(url, ServeCls))
+        futures.append(get_boots_items_by_page.submit(url, ServeCls))
     
     items = []
     for future in futures:
@@ -397,4 +403,5 @@ def extract_boots(host: str, path: str, ServeCls) -> list:
 
 
 if __name__ == '__main__':
-        extract_boots(host='https://megasport.ua', path='/ua/catalog/krossovki-i-snikersi/male/', ServeCls=ExtractBootsMaleItems)
+        extract(host='https://megasport.ua', path='/ua/catalog/krossovki-i-snikersi/male/', ServeCls=ExtractBootsMaleItems)
+        # extract(host='https://megasport.ua', path='/ua/catalog/krossovki-i-snikersi/male/page-5', ServeCls=ExtractBootsMaleItems)
