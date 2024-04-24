@@ -157,7 +157,7 @@ def extract(host: str, path: str, ExtractObj: ExtractItems) -> list:
     count = ExtractObj.get_pages_count(sp)
     if not count:
         count = 1
-    count = 2
+    #count = 2
     futures = []
     for i in range(1, count):
         path = path + f"page-{i}/"
