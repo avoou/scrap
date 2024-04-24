@@ -1,23 +1,13 @@
 import requests
 import httpx
 import sqlite3
-import logging
 import pandas as pd
 from pprint import pprint
 from bs4 import BeautifulSoup, Tag
 from typing import Tuple
 from abc import ABC, abstractmethod
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from prefect import task, Task, flow, get_run_logger
-
-
-# logger = logging.getLogger()
-# logging.basicConfig(level=logging.INFO)
-
-
-
-MAX_THREADS = 100
+from prefect import task, flow, get_run_logger
 
 
 class Schemes:
@@ -35,29 +25,38 @@ class EmptyDfError(Exception):
 
 class ExtractItems(ABC):
     @abstractmethod
-    def _get_pages_count(self) -> int:
+    def get_items(self):
         raise NotImplementedError("Not implemented")
     
 
     @abstractmethod
-    def _get_items(self) -> str:
-        raise NotImplementedError("Not implemented")
-
-
-    @abstractmethod
-    def _get_name(self) -> str:
+    def get_pages_count(self):
         raise NotImplementedError("Not implemented")
     
 
     @abstractmethod
-    def _get_price_current(self) -> str:
+    def get_items(self):
         raise NotImplementedError("Not implemented")
 
 
     @abstractmethod
-    def _get_items_link(self) -> str:
+    def get_name(self):
+        raise NotImplementedError("Not implemented")
+    
+
+    @abstractmethod
+    def get_price_current(self):
         raise NotImplementedError("Not implemented")
 
+
+    @abstractmethod
+    def get_items_link(self):
+        raise NotImplementedError("Not implemented")
+    
+
+    @abstractmethod
+    def get_items_by_page(self):
+        raise NotImplementedError("Not implemented")
 
 @task
 def get_bs_by_url(url: str) -> BeautifulSoup:
@@ -78,22 +77,19 @@ def get_bs_by_url(url: str) -> BeautifulSoup:
 
 
 class ExtractBootsMaleItems(ExtractItems):
-    @staticmethod
-    def get_items(sp: BeautifulSoup) -> Tag:
+    def get_items(self, sp: BeautifulSoup) -> Tag:
         items = sp.find('div', class_='Fkfp3V')
         return items if items else [None]
     
 
-    @staticmethod
-    def get_pages_count(sp: BeautifulSoup) -> int:
+    def get_pages_count(self, sp: BeautifulSoup) -> int:
         try:
             return len(sp.find(id='select-page'))
         except Exception:
             return None
         
 
-    @staticmethod
-    def get_name(item: Tag) -> str:
+    def get_name(self, item: Tag) -> str:
         try:
             name = item.find('div', class_='ihuxuw').text
             name = name.replace("\u2009", " ").replace("\xa0", " ")
@@ -102,8 +98,7 @@ class ExtractBootsMaleItems(ExtractItems):
             return None
 
 
-    @staticmethod
-    def get_price_current(item: Tag) -> Tuple[int, str]:
+    def get_price_current(self, item: Tag) -> Tuple[int, str]:
         try:
             price = item.find('span', class_='MeSmTt').text
             price, current = price.split("\u2009")
@@ -114,8 +109,7 @@ class ExtractBootsMaleItems(ExtractItems):
             return None, None
 
 
-    @staticmethod
-    def get_items_link(item: Tag) -> str:
+    def get_items_link(self, item: Tag) -> str:
         try:
             tag = item.find('a', class_='it25hX')
             return tag.get('href')
@@ -123,27 +117,26 @@ class ExtractBootsMaleItems(ExtractItems):
             return None
         
 
-    @staticmethod
-    def get_items_by_page(page_url: str):
+    def get_items_by_page(self, page_url: str):
         sp = get_bs_by_url(page_url)
-        items = __class__.get_items(sp)
+        items = self.get_items(sp)
         return items
 
 
 @task
-def get_boots_items_by_page(url: str, ServeCls):
+def get_items_by_page(url: str, ServeCls):
     items = ServeCls.get_items_by_page(url)
     return items
 
 
 @task
-def to_df(items: list, host: str, ServeCls) -> pd.DataFrame:
+def to_df(items: list, host: str, ExtractObj: ExtractItems) -> pd.DataFrame:
     df = pd.DataFrame(columns=Schemes.RAW)
 
     for item in items:
-        name = ServeCls.get_name(item=item)
-        price, current = ServeCls.get_price_current(item=item)
-        link = ServeCls.get_items_link(item)
+        name = ExtractObj.get_name(item=item)
+        price, _ = ExtractObj.get_price_current(item=item)
+        link = ExtractObj.get_items_link(item)
         res = {
             "name": name,
             "price_ua": price,
@@ -156,12 +149,12 @@ def to_df(items: list, host: str, ServeCls) -> pd.DataFrame:
 
 
 @flow
-def extract(host: str, path: str, ServeCls) -> list:
+def extract(host: str, path: str, ExtractObj: ExtractItems) -> list:
     logger = get_run_logger()
     logger.info('Start extracting ...')
     url = host + path
     sp = get_bs_by_url(url)
-    count = ServeCls.get_pages_count(sp)
+    count = ExtractObj.get_pages_count(sp)
     if not count:
         count = 1
     count = 2
@@ -169,7 +162,7 @@ def extract(host: str, path: str, ServeCls) -> list:
     for i in range(1, count):
         path = path + f"page-{i}/"
         url = host + path
-        futures.append(get_boots_items_by_page.submit(url, ServeCls))
+        futures.append(get_items_by_page.submit(url, ExtractObj))
     
     items = []
     for future in futures:
@@ -181,8 +174,9 @@ def extract(host: str, path: str, ServeCls) -> list:
         logger.error("Cant get items. Check the implementation of get_items method")
         raise NoItemsError
 
-    df = to_df(items=items, host=host, ServeCls=ServeCls)
+    df = to_df(items=items, host=host, ExtractObj=ExtractObj)
     #print(df.info())
+    logger.info(f'Len of extracting is: {len(df)}')
     return df
 
 
@@ -403,5 +397,6 @@ def extract(host: str, path: str, ServeCls) -> list:
 
 
 if __name__ == '__main__':
-        extract(host='https://megasport.ua', path='/ua/catalog/krossovki-i-snikersi/male/', ServeCls=ExtractBootsMaleItems)
+        ExtractObj = ExtractBootsMaleItems()
+        extract(host='https://megasport.ua', path='/ua/catalog/krossovki-i-snikersi/male/', ExtractObj=ExtractObj)
         # extract(host='https://megasport.ua', path='/ua/catalog/krossovki-i-snikersi/male/page-5', ServeCls=ExtractBootsMaleItems)
