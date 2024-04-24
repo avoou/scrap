@@ -148,7 +148,7 @@ def to_df(items: list, host: str, ExtractObj: ExtractItems) -> pd.DataFrame:
     return df
 
 
-@flow
+@task
 def extract(host: str, path: str, ExtractObj: ExtractItems) -> list:
     logger = get_run_logger()
     logger.info('Start extracting ...')
@@ -175,228 +175,88 @@ def extract(host: str, path: str, ExtractObj: ExtractItems) -> list:
         raise NoItemsError
 
     df = to_df(items=items, host=host, ExtractObj=ExtractObj)
-    #print(df.info())
-    logger.info(f'Len of extracting is: {len(df)}')
+
+    logger.info(f'Count of extracting items is: {len(df)}')
     return df
 
 
-
-
-# class ClientDB:
-#     def __init__(self, db: str) -> None:
-#         self.db = db
-#         self.con = sqlite3.connect(self.db)
-#         self.cursor = self.con.cursor()
+class ClientDB:
+    def __init__(self, db: str) -> None:
+        self.db = db
+        self.con = sqlite3.connect(self.db)
+        self.cursor = self.con.cursor()
     
-#     def write_df_to_db(self, df: pd.DataFrame):
-#         df.to_sql(name='krossy_table', con=self.con, if_exists = 'append', chunksize = 1000)
+    def write_df_to_db(self, df: pd.DataFrame, table: str):
+        df.to_sql(name=table, con=self.con, if_exists = 'append', chunksize = 1000)
 
 
-#     def request(self, req: str):
-#         response = self.cursor.execute(req)
-#         return response.fetchall()
+    def request(self, req: str):
+        response = self.cursor.execute(req)
+        return response.fetchall()
 
 
-# class ExtractItems(ABC):
-#     def __init__(self, client: ClientWeb, host: str, path: str):
-#         self.host = host
-#         self.path = path
-#         self.url = host + path
-#         self.client = client
-#         self.df = pd.DataFrame(columns=Schemes.RAW)
+@task
+def drop_none(df: pd.DataFrame):
+    logger = get_run_logger()
+    logger.info(f'Count of missing items is: {df.isnull().any(axis=1).sum()}')
+    res = df.dropna()
     
-
-#     @abstractmethod
-#     def _get_pages_count(self) -> int:
-#         raise NotImplementedError("Not implemented")
+    if not len(res):
+        logger.error('Empty extract df. Check internet connection or urls')
+        raise EmptyDfError
     
-
-#     @abstractmethod
-#     def _get_items(self) -> str:
-#         raise NotImplementedError("Not implemented")
-    
-
-#     @abstractmethod
-#     def _get_name(self) -> str:
-#         raise NotImplementedError("Not implemented")
-    
-
-#     @abstractmethod
-#     def _get_price_current(self) -> str:
-#         raise NotImplementedError("Not implemented")
+    return res
 
 
-#     @abstractmethod
-#     def _get_items_link(self) -> str:
-#         raise NotImplementedError("Not implemented")
-    
-#     @task
-#     def _get_items_by_all_pages(self):
-#         logger = get_run_logger()
-#         pages = self._get_pages_count(self.url)
-#         if not pages:
-#             pages = 1
-#             logger.warning('Only one page is used for extracting')
-
-#         urls = [self.url + f"page-{i}/" for i in range(1, pages)]
-#         items = []
-#         with ThreadPoolExecutor(max_workers=int(MAX_THREADS)) as executor:
-#             bs_pages = list(executor.map(self.client.get_bs_by_url, urls))
-#         for page in bs_pages:
-#             for item in self._get_items(page):
-#                 items.append(item)
-
-#         if not len(items):
-#             logger.error('No any items. Check internet connection or urls')
-#             raise NoItemsError
-        
-#         return items
+@task
+def add_another_current(df: pd.DataFrame):
+    course = 35
+    df.loc[:, 'price_us'] = df.loc[:, 'price_ua'].apply(lambda x: round(x / course, 2))
 
 
-#     def _get_items_by_all_pages_consistently(self):
-#         pages = self._get_pages_count(self.url)
-#         if not pages:
-#             pages = 1
-#         pages = 2
-#         items = []
-#         for i in range(1, pages):
-#             url = self.url + f"page-{i}/"
-#             sp = self.client.get_bs_by_url(url)
-#             for item in self._get_items(sp):
-#                 items.append(item)
-#         return items
-
-#     @task
-#     def extract(self):
-#         items = self._get_items_by_all_pages()
-#         for item in items:
-#             name = self._get_name(item=item)
-#             price, current = self._get_price_current(item=item)
-#             link = self._get_items_link(item)
-#             res = {
-#                 "name": name,
-#                 "price_ua": price,
-#                 "link": self.host + link if link else None,
-#             }
-
-#             self.df = pd.concat([self.df, pd.DataFrame([res])])
+@task
+def add_data_time(df: pd.DataFrame):
+    df.loc[:, 'date'] = datetime.now()
 
 
-#     @property
-#     def dataframe(self):
-#         return self.df
-    
-
-#     @property
-#     def lasts_items(self):
-#         return self.last_items_count
-
-
-# class ExtractBootsMaleItems(ExtractItems):
-#     def _get_items(self, sp: BeautifulSoup) -> Tag:
-#         return sp.find('div', class_='Fkfp3V')
+@task
+def transform(extract_df: pd.DataFrame):
+    df = pd.DataFrame(columns=Schemes.OUT)
+    extract_df = extract_df.copy()
+    extract_df = drop_none(extract_df)
+    add_another_current(extract_df)
+    add_data_time(extract_df)
+    return pd.concat([df, extract_df])
+    #return df
 
 
-#     def _get_name(self, item: Tag) -> str:
-#         try:
-#             name = item.find('div', class_='ihuxuw').text
-#             name = name.replace("\u2009", " ").replace("\xa0", " ")
-#             return str(name)
-#         except Exception:
-#             return None
+@task
+def load_to_db(df_to_load: pd.DataFrame, db_path: str, db_table: str):
+    logger = get_run_logger()
+    db = ClientDB(db=db_path)
+    try:
+        db.write_df_to_db(df=df_to_load, table=db_table)
+        return len(df_to_load)
+    except Exception:
+        logger.error("Trouble to connect to db")
+        return None
 
 
-#     def _get_price_current(self, item: Tag) -> Tuple[int, str]:
-#         try:
-#             price = item.find('span', class_='MeSmTt').text
-#             price, current = price.split("\u2009")
-#             price = int(price.replace("\xa0", ""))
-
-#             return price, current
-#         except Exception:
-#             return None, None
-
-
-#     def _get_items_link(self, item: Tag) -> str:
-#         try:
-#             tag = item.find('a', class_='it25hX')
-#             return tag.get('href')
-#         except Exception:
-#             return None
-
-
-#     def _get_pages_count(self, url: str) -> int:
-#         try:
-#             sp = self.client.get_bs_by_url(url)
-#             return len(sp.find(id='select-page'))
-#         except Exception:
-#             return None
-
-
-# class Transform:
-#     def __init__(self, ) -> None:
-#         self.df = pd.DataFrame(columns=Schemes.OUT)
-
-#     @task
-#     def drop_none(self, df: pd.DataFrame):
-#         logger = get_run_logger()
-#         logger.info(f'Number of missing items: {df.isnull().any(axis=1).sum()}')
-#         res = df.dropna()
-        
-#         if not len(res):
-#             logger.error('Empty extract df. Check internet connection or urls')
-#             raise EmptyDfError
-        
-#         return res
-
-#     @task
-#     def add_another_current(self, df: pd.DataFrame):
-#         course = 35
-#         df.loc[:, 'price_us'] = df.loc[:, 'price_ua'].apply(lambda x: round(x / course, 2))
-
-#     @task
-#     def add_data_time(self, df: pd.DataFrame):
-#         df.loc[:, 'date'] = datetime.now()
-
-#     @task
-#     def transform(self, extract_df: pd.DataFrame):
-#         extract_df = extract_df.copy()
-#         extract_df = self.drop_none(extract_df)
-#         self.add_another_current(extract_df)
-#         self.add_data_time(extract_df)
-#         self.df = pd.concat([self.df, extract_df])
-        
-
-#     @property
-#     def dataframe(self):
-#         return self.df
-
-# @flow
-# def main():
-#     logger = get_run_logger()
-#     try:
-#         client = ClientWeb()
-#         transform = Transform()
-#         db = ClientDB(db='krossy.db')
-
-#         boots_items_extractor = ExtractBootsMaleItems(client=client, host='https://megasport.ua', path='/ua/catalog/krossovki-i-snikersi/male/')
-#         boots_items_extractor.extract()
-
-#         transform.transform(boots_items_extractor.dataframe)  
-
-#         db.write_df_to_db(transform.dataframe)
-
-#         logger.info(f'It has written to db {len(transform.dataframe)} of items')
-
-#     except Exception as e:
-#         print(e)
-#         logger.error(e, f'error: {str(e)}')
-
-
-    
+@flow
+def etl_flow(host: str, path:str, db_path, db_table):
+    logger = get_run_logger()
+    ExtractObj = ExtractBootsMaleItems()
+    extract_df = extract(host=host, path=path, ExtractObj=ExtractObj)
+    transform_df = transform(extract_df=extract_df)
+    count = load_to_db(df_to_load=transform_df, db_path=db_path, db_table=db_table)
+    if count:
+        logger.info(f'It has been written {count} items to {db_path} in {db_table} table')
 
 
 if __name__ == '__main__':
-        ExtractObj = ExtractBootsMaleItems()
-        extract(host='https://megasport.ua', path='/ua/catalog/krossovki-i-snikersi/male/', ExtractObj=ExtractObj)
-        # extract(host='https://megasport.ua', path='/ua/catalog/krossovki-i-snikersi/male/page-5', ServeCls=ExtractBootsMaleItems)
+        etl_flow(
+            host='https://megasport.ua', 
+            path='/ua/catalog/krossovki-i-snikersi/male/', 
+            db_path='krossy.db', 
+            db_table='krossy_table'
+        )
