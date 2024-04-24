@@ -245,12 +245,15 @@ def load_to_db(df_to_load: pd.DataFrame, db_path: str, db_table: str):
 @flow
 def etl_flow(host: str, path:str, db_path, db_table):
     logger = get_run_logger()
-    ExtractObj = ExtractBootsMaleItems()
-    extract_df = extract(host=host, path=path, ExtractObj=ExtractObj)
-    transform_df = transform(extract_df=extract_df)
-    count = load_to_db(df_to_load=transform_df, db_path=db_path, db_table=db_table)
-    if count:
-        logger.info(f'It has been written {count} items to {db_path} in {db_table} table')
+    try:
+        ExtractObj = ExtractBootsMaleItems()
+        extract_df = extract(host=host, path=path, ExtractObj=ExtractObj)
+        transform_df = transform(extract_df=extract_df)
+        count = load_to_db(df_to_load=transform_df, db_path=db_path, db_table=db_table)
+        if count:
+            logger.info(f'It has been written {count} items to {db_path} in {db_table} table')
+    except Exception as e:
+        logger.error(e, "Something went wrong")
 
 
 if __name__ == '__main__':
