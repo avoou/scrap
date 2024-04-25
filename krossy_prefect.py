@@ -199,13 +199,11 @@ class ClientDB:
 def drop_none(df: pd.DataFrame):
     logger = get_run_logger()
     logger.info(f'Count of missing items is: {df.isnull().any(axis=1).sum()}')
-    res = df.dropna()
+    df.dropna(inplace=True) #modify the source df
     
-    if not len(res):
+    if not len(df):
         logger.error('Empty extract df. Check internet connection or urls')
         raise EmptyDfError
-    
-    return res
 
 
 @task
@@ -223,11 +221,10 @@ def add_data_time(df: pd.DataFrame):
 def transform(extract_df: pd.DataFrame):
     df = pd.DataFrame(columns=Schemes.OUT)
     extract_df = extract_df.copy()
-    extract_df = drop_none(extract_df)
+    drop_none(extract_df)
     add_another_current(extract_df)
     add_data_time(extract_df)
     return pd.concat([df, extract_df])
-    #return df
 
 
 @task
