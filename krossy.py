@@ -205,13 +205,11 @@ class Transform:
 
     def drop_none(self, df: pd.DataFrame):
         logger.info(f'Number of missing items: {df.isnull().any(axis=1).sum()}')
-        res = df.dropna()
+        df.dropna(inplace=True)
         
-        if not len(res):
+        if not len(df):
             logger.error('Empty extract df. Check internet connection or urls')
             raise EmptyDfError
-        
-        return res
 
 
     def add_another_current(self, df: pd.DataFrame):
@@ -225,7 +223,7 @@ class Transform:
 
     def transform(self, extract_df: pd.DataFrame):
         extract_df = extract_df.copy()
-        extract_df = self.drop_none(extract_df)
+        self.drop_none(extract_df)
         self.add_another_current(extract_df)
         self.add_data_time(extract_df)
         self.df = pd.concat([self.df, extract_df])
