@@ -5,10 +5,12 @@ import scrapy
 class BootSpider(scrapy.Spider):
     name = 'boots'
 
-    def start_requests(self):
-        urls = ['https://megasport.ua/ua/catalog/krossovki-i-snikersi/male/']
-        for url in urls:
-            yield scrapy.Request(url=url, callback=self.parse)
+    start_urls = ['https://megasport.ua/ua/catalog/krossovki-i-snikersi/male/']
+
+    # def start_requests(self):
+    #     urls = ['https://megasport.ua/ua/catalog/krossovki-i-snikersi/male/']
+    #     for url in urls:
+    #         yield scrapy.Request(url=url, callback=self.parse)
 
     def _get_name(self, item) -> str:
         name = item.css('div.ihuxuw::text').getall()
