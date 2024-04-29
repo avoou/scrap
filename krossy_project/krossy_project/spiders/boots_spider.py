@@ -1,4 +1,5 @@
 import scrapy
+from ..items import BootsItem
 
 #to run being in project dir: scrapy crawl boots
 
@@ -34,16 +35,17 @@ class BootSpider(scrapy.Spider):
 
 
     def parse(self, response):
+        boots_items = BootsItem()
         items = response.css("div.Fkfp3V div.Z7K92d")
         for item in items:
-            yield {
-                "name": self._get_name(item),
-                "price_ua": self._get_price(item),
-                "link": response.urljoin(self._get_link(item)),
-            }
+            boots_items['name'] = self._get_name(item)
+            boots_items['price_ua'] = self._get_price(item)
+            boots_items['link'] = response.urljoin(self._get_link(item))
+            yield boots_items
+
 
         pagination = response.css('div.pfK9C7')
         next_page_path = pagination[0].css('[data-test-id="nextPage"]::attr(href)').get()
         if next_page_path:  
             url = response.urljoin(next_page_path)
-            yield scrapy.Request(url=url, callback=self.parse)
+            #yield scrapy.Request(url=url, callback=self.parse)

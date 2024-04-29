@@ -6,7 +6,10 @@
 import scrapy
 
 
-class KrossyProjectItem(scrapy.Item):
+class BootsItem(scrapy.Item):
     # define the fields for your item here like:
-    # name = scrapy.Field()
-    pass
+    date = scrapy.Field()
+    name = scrapy.Field()
+    price_ua = scrapy.Field()
+    price_us = scrapy.Field()
+    link = scrapy.Field()
