@@ -77,5 +77,9 @@ class TestTransform(TestCase):
         self.assertTrue(np.issubdtype(df['date'].dtype, np.datetime64))
 
 
+    def test_foo(self):
+        self.assertTrue(False)
+
+
 if __name__ == '__main__':
     main()
